@@ -83,7 +83,7 @@ fn add_resources(
                 .with(Position::new(Vec3::new(4.0, 0.0, 0.0)))
                 .with(Rotation::new(Quat::IDENTITY))
                 .with(Smooth::new_position(1.25))
-                .with(Arm::new(Vec3::new(0.0, 1.5, -3.5)))
+                .with(Arm::new(Vec3::new(1.0, 2.0, -3.5)))
                 .with(Smooth::new_position(2.5))
                 .with(
                     LookAt::new(Vec3::new(4.0, 0.0, 0.0))
@@ -134,7 +134,8 @@ struct MenuPlugin;
 
 impl Plugin for MenuPlugin {
     fn build(&self, app: &mut App) {
-        // todo, jerry
+        //
+
     }
 }
 
