@@ -53,27 +53,27 @@ pub struct ProjectedResources {
 #[derive(Component)]
 pub struct UIMainCamera;
 
-/*
-setup lvl1
-    add_planet(
-        &mut commands,
-        Vec3::ZERO,
-        200.0,
-        2.0,
-        &mesh,
-        &material,
+pub struct DeltaTime {
+    pub time: f32,
+}
 
-    add_ball(
-        &mut commands,
-        Vec3::new(4.0, 0.0, 0.0),
-        3.0,
-        0.1,
-        &mesh,
-        &material,
-        Vec3::new(1.0, 1.0, 1.0) * 0.5,
-setup lvl2
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum GameState {
+    Splash,
+    Game,
+}
 
-setup lvl3
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum CameraState {
+    Follow,
+    Around {
+        pos: Vec3,
+        id: usize,
+    },
+}
 
+#[derive(Component)]
+pub struct MainMenuElement;
 
- */
+#[derive(Component)]
+pub struct GameElement;
