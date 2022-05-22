@@ -1723,6 +1723,7 @@ dependencies = [
  "bevy",
  "bevy_kira_audio",
  "dolly",
+ "lazy_static",
 ]
 
 [[package]]

@@ -11,9 +11,41 @@ mod audio;
 use audio::GameAudioPlugin;
 mod start_menu;
 use start_menu::MainMenuPlugin;
+mod levels;
+use levels::*;
 
-struct DeltaTime {
-    time: f32,
+struct GamePlugin;
+
+impl Plugin for GamePlugin {
+    fn build(&self, app: &mut App) {
+        app
+            .add_system_set(SystemSet::on_enter(GameState::Game).with_system(setup))
+            .add_system_set(SystemSet::on_update(GameState::Game)
+                .with_system(update_timestep)
+                .with_system(update_acc)
+                .with_system(update_pos_vel)
+                .with_system(collide)
+                .with_system(camera_movement)
+                .with_system(aim)
+            )
+            .add_system_set(SystemSet::on_exit(GameState::Game)
+                .with_system(despawn::<GameElement>)
+            );
+    }
+}
+
+struct MenuPlugin;
+
+impl Plugin for GamePlugin {
+    fn build(&self, app: &mut App) {
+        // todo, jerry
+    }
+}
+
+fn despawn<T: Component>(to_despawn: Query<Entity, With<T>>, mut commands: Commands) {
+    for entity in to_despawn.iter() {
+        commands.entity(entity).despawn_recursive();
+    }
 }
 
 fn main() {
@@ -22,18 +54,13 @@ fn main() {
         .add_plugins(DefaultPlugins)
         .add_plugin(GameAudioPlugin)
         .add_plugin(MainMenuPlugin)
+        .add_plugin(GamePlugin)
         .add_startup_system(setup)
-        .add_system(update_timestep)
-        .add_system(update_acc)
-        .add_system(update_pos_vel)
-        .add_system(collide)
-        .add_system(camera_movement)
-        .add_system(aim)
         //game runningfl
         .run();
 }
 
-fn add_ball(
+pub fn add_ball(
     commands: &mut Commands,
     pos: Vec3,
     mass: f32,
@@ -60,7 +87,7 @@ fn add_ball(
         .insert(MainBall);
 }
 
-fn add_planet(
+pub fn add_planet(
     commands: &mut Commands,
     pos: Vec3,
     mass: f32,
@@ -82,7 +109,8 @@ fn add_planet(
         .insert(Dynamics {
             acc: Vec3::ZERO,
             vel: Vec3::ZERO,
-        });
+        })
+        .insert(GameElement);
 }
 
 /// set up a simple 3D scene
@@ -119,6 +147,9 @@ fn setup(
         Vec3::new(1.0, 1.0, 1.0) * 0.5,
     );
 
+    commands
+        .add_resource(CameraState::Follow);
+
     // light
     commands.spawn_bundle(PointLightBundle {
         point_light: PointLight {
@@ -138,13 +169,13 @@ fn setup(
             rig: CameraRig::builder()
                 .with(Position::new(Vec3::new(4.0, 0.0, 0.0)))
                 .with(Rotation::new(Quat::IDENTITY))
-                .with(Smooth::new_position(1.25).predictive(true))
+                .with(Smooth::new_position(1.25))
                 .with(Arm::new(Vec3::new(0.0, 1.5, -3.5)))
                 .with(Smooth::new_position(2.5))
                 .with(
                     LookAt::new(Vec3::new(4.0, 0.0, 0.0))
                         .tracking_smoothness(1.25)
-                        .tracking_predictive(true)
+                        // .tracking_predictive(true)
                 )
                 .build()
         });
@@ -191,10 +222,7 @@ fn update_acc(
     for (outer, outer_pos, outer_gravity, mut acc) in query_acc.iter_mut() {
         acc.acc = Vec3::ZERO;
         for (inner, inner_pos, inner_gravity) in query_pos.iter() {
-            let delta = inner_pos.translation - outer_pos.translation;
 
-            // If the distance between the center of two objects is basically zero...
-            // that means we have the same object most likely. This is really crude.
             if outer == inner {
                 continue;
             }
@@ -266,20 +294,37 @@ fn camera_movement(
     mut position: EventReader<MouseMotion>,
     target: Res<TargetedPlanet>,
     mut query: Query<(&mut Transform, &mut CameraTag)>,
-    ball:
+    ball: Query<&GlobalTransform, With<MainBall>>,
+    time: Res<Time>,
+    state: Res<CameraState>,
 ) {
-    if clicked.pressed(MouseButton::Left) {
-        let (mut transform, mut camera) = query.iter_mut().next().unwrap();
+    let (mut transform, mut camera) = query.iter_mut().next().unwrap();
 
+    if clicked.pressed(MouseButton::Left) {
         for event in position.iter() {
-            let delta = event.delta / (110.0 * (target.pos - transform.translation).length());
+            let delta = event.delta / (60.0 * (target.pos - transform.translation).length());
 
 
             camera.rig.driver_mut::<Rotation>().rotation *= Quat::from_rotation_x(-delta.y) * Quat::from_rotation_y(-delta.x);
         }
     }
 
-    camera.rig.driver_mut::<>
+    let ball = ball.iter().next().unwrap();
+
+    match *state {
+        CameraState::Follow => {
+            camera.rig.driver_mut::<Position>().position = ball.translation;
+            camera.rig.driver_mut::<LookAt>().target = ball.translation;
+        },
+        CameraState::Around { pos, id: _id } => {
+            camera.rig.driver_mut::<Position>().position = pos;
+            camera.rig.driver_mut::<LookAt>().target = pos;
+        }
+    }
+
+    let new_transform = camera.rig.update(time.delta_seconds());
+    transform.translation = new_transform.position;
+    transform.rotation = new_transform.rotation;
 }
 
 fn aim(
@@ -292,6 +337,7 @@ fn aim(
     camera: Query<&Transform, With<CameraTag>>,
     gravity_sources: Query<(&Planet, &Transform)>,
     mut ball: Query<(Entity, &Transform), (With<MainBall>, Without<Dynamics>)>,
+    time: Res<DeltaTime>,
 ) {
     let (ball_entity, ball_pos) = if let Some(x) = ball.iter_mut().next() {
         x
@@ -340,7 +386,7 @@ fn aim(
             vel,
             16,
             20,
-            0.016
+            time.time
         );
 
         for (i, pos) in positions.iter().copied().enumerate() {

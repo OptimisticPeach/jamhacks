@@ -9,3 +9,4 @@ edition = "2021"
 bevy = "0.7.0"
 bevy_kira_audio = { version = "0.9.0", features = ["mp3"] }
 dolly = "0.3.0"
+lazy_static = "1.4.0"
