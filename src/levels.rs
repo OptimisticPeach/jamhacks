@@ -100,6 +100,7 @@ fn spawn_level<const LEVEL: usize>(
     player_mesh: &Handle<Mesh>,
     material: &Handle<StandardMaterial>,
     player_material: &Handle<StandardMaterial>,
+    target_material: &Handle<StandardMaterial>,
 ) {
     for planet in &LEVELS[LEVEL].planets {
         crate::add_planet::<LEVEL>(
@@ -117,10 +118,17 @@ fn spawn_level<const LEVEL: usize>(
         LEVELS[LEVEL].start.resolve(&LEVELS[LEVEL], 0.3),
         1.0,
         0.2,
-        &player_mesh.clone(),
-        &player_material.clone(),
+        &player_mesh,
+        &player_material,
         None,
         LEVELS[LEVEL].planets[LEVELS[LEVEL].start.planet].pos
+    );
+
+    crate::add_target::<LEVEL>(
+        commands,
+        LEVELS[LEVEL].goal.resolve(&LEVELS[LEVEL], 0.2),
+        &player_mesh,
+        &target_material
     );
 }
 
@@ -134,6 +142,7 @@ pub fn load<const LEVEL: usize>(
         &resources.player_mesh,
         &resources.planet_mat,
         &resources.player_mat,
+        &resources.target_mat,
     )
 }
 
