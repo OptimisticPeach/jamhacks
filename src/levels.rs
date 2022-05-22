@@ -47,7 +47,7 @@ lazy_static::lazy_static! {
             ],
             start: PointOfInterest {
                 planet: 0,
-                direction: Vec3::new(1.0, 1.0, 1.0),
+                direction: Vec3::new(1.0, 0.0, 1.0),
             },
             goal: PointOfInterest {
                 planet: 0,
@@ -57,7 +57,24 @@ lazy_static::lazy_static! {
             //     CameraView(Vec3::new(5.0, 5.0, 5.0))
             // ]
         },
-        Level {
+        Level { //Level 2
+            planets: vec![
+                make_planet!(Vec3::new(1.0, 1.0, 1.0), 600.0, 1.0),
+                make_planet!(Vec3::new(4.0, -1.0, -1.0), 600.0, 1.0),
+            ],
+            start: PointOfInterest {
+                planet: 0,
+                direction: Vec3::new(1.0, 1.0, 1.0),
+            },
+            goal: PointOfInterest {
+                planet: 0,
+                direction: -Vec3::new(1.0, 1.0, 1.0),
+            },
+            // cameras: vec![
+            //     CameraView(Vec3::new(5.0, 5.0, 5.0))
+            // ]
+        },
+        Level { //Level 3
             planets: vec![
                 make_planet!(Vec3::new(1.0, 1.0, 1.0), 600.0, 1.0),
                 make_planet!(Vec3::new(4.0, -1.0, -1.0), 600.0, 1.0),
