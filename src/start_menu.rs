@@ -4,7 +4,8 @@ use crate::{GameState, LevelNumber};
 
 pub struct MainMenuPlugin;
 
-//Check 32 seconds for making a UI camera seperate from Main
+#[derive(Component)]
+pub struct ButtonActive(bool);
 
 struct UiAssets {
     font: Handle<Font>,
@@ -15,8 +16,14 @@ struct UiAssets {
 impl Plugin for MainMenuPlugin {
     fn build(&self, app: &mut App) {
         app.add_startup_system(setup_menu)
-            .add_system_set(SystemSet::on_pause(GameState::Splash).with_system(despawn_menu))
+            .add_system_set(SystemSet::on_exit(GameState::Splash).with_system(despawn_menu))
             .add_system(handle_start_button);
+    }
+}
+
+fn despawn_menu(mut commands: Commands, button_query: Query<Entity, With<Button>>) {
+    for ent in button_query.iter() {
+        commands.entity(ent).despawn_recursive();
     }
 }
 
@@ -28,7 +35,9 @@ fn handle_start_button(
     >,
     mut image_query: Query<&mut UiImage>,
     ui_assets: Res<UiAssets>,
-    ascii: Res<AsciiSheet>,
+    mut game_state: ResMut<State<GameState>>,
+    mut level_state: ResMut<State<LevelNumber>>,
+    //ascii: Res<AsciiSheet>,
 ) {
     for (children, mut active, interaction) in interaction_query.iter_mut() {
         let child = children.iter().next().unwrap();
@@ -38,7 +47,10 @@ fn handle_start_button(
             Interaction::Clicked => {
                 if active.0 {
                     image.0 = ui_assets.button_pressed.clone();
-                    create_fadeout(&mut commands, Some(GameState::Splash), &ascii);
+                    game_state.set(GameState::Game).unwrap();
+                    level_state.set(LevelNumber::One).unwrap();
+                    //Here change gamestate
+                    //create_fadeout(&mut commands, Some(GameState::Splash), &ascii);
                     active.0 = false;
                 }
             }
@@ -62,13 +74,15 @@ fn setup_menu(mut commands: Commands, assets: Res<AssetServer>) {
             align_self: AlignSelf::Center,
             align_items: AlignItems::Center,
             justify_content: JustifyContent::Center,
-            size: Size::new(Val::Percent(15.0), Val::Percent(10.0)),
+            size: Size::new(Val::Percent(50.0), Val::Percent(40.0)),
             margin: Rect::all(Val::Auto),
             ..Default::default()
         },
         color: Color::NONE.into(),
         ..Default::default()
-    }).with_children(|parent: &mut ChildBuilder| {
+    })
+        .insert(ButtonActive(true))
+        .with_children(|parent: &mut ChildBuilder| {
         parent.spawn_bundle(ImageBundle {
             style: Style {
                 size: Size::new(Val::Percent(100.0), Val::Percent(100.0)),

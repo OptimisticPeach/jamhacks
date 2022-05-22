@@ -154,6 +154,8 @@ fn despawn<T: Component>(to_despawn: Query<Entity, With<T>>, mut commands: Comma
 
 fn main() {
     App::new()
+        .add_state(GameState::Splash)
+        .add_state(LevelNumber::None)
         .insert_resource(Msaa { samples: 4 })
         .add_plugins(DefaultPlugins)
         .add_plugin(GameAudioPlugin)
