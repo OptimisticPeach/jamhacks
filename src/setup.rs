@@ -6,6 +6,8 @@ pub const RESOLUTION: f32 = 16.0 / 9.0;
 
 pub const GRAVITY: f32 = 6.67e-2;
 
+pub const BALL_RAD: f32 = 0.1;
+
 #[derive(Component)]
 pub struct GravityAffected {
     pub mass: f32,
@@ -22,6 +24,7 @@ pub struct Planet {
 pub struct Dynamics {
     pub acc: Vec3,
     pub vel: Vec3,
+    pub recent_collisions: f32,
 }
 
 #[derive(Component)]
@@ -68,7 +71,6 @@ pub enum CameraState {
     Follow,
     Around {
         pos: Vec3,
-        id: usize,
     },
 }
 

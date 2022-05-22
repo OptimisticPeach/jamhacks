@@ -28,8 +28,8 @@ fn start_bgm_music(audio: Res<Audio>, audio_state: Res<AudioState> ){
 }
 
 fn load_audio(mut commands: Commands, audio: Res<Audio>, assets: Res<AssetServer>){
-    let bgm_handle = assets.load("BGMusic.mp3");
-    let intro_handle = assets.load("introMusic.mp3");
+    let bgm_handle = assets.load("BGMusic.flac");
+    let intro_handle = assets.load("introMusic.flac");
 
     let bgm_channel = AudioChannel::new("bgm".to_string());
     let sfx_channel = AudioChannel::new("sfx".to_string());

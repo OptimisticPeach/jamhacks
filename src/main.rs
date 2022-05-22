@@ -1,9 +1,11 @@
 //! A simple 3D scene with light shining over a cube sitting on a plane.
 
-use bevy::input::mouse::MouseMotion;
+use bevy::input::mouse::{MouseMotion, MouseWheel};
 use bevy::prelude::*;
 use bevy::render::camera::ScalingMode;
+use bevy::render::render_resource::Texture;
 use dolly::prelude::*;
+use rand::{Rng, thread_rng};
 
 mod setup;
 use setup::*;
@@ -20,7 +22,9 @@ impl Plugin for GamePlugin {
     fn build(&self, app: &mut App) {
         app
             .add_startup_system(add_resources)
-            // .add_system_set(SystemSet::on_enter(GameState::Game).with_system(setup))
+            .add_system_set(SystemSet::on_enter(GameState::Game)
+                .with_system(add_stars)
+            )
             .add_system_set(SystemSet::on_update(GameState::Game)
                 .with_system(skip_level)
                 .with_system(update_timestep)
@@ -29,6 +33,8 @@ impl Plugin for GamePlugin {
                 .with_system(collide)
                 .with_system(camera_movement)
                 .with_system(aim)
+                .with_system(touch_target)
+                .with_system(zoom)
             )
             .add_system_set(SystemSet::on_exit(GameState::Game)
                 .with_system(despawn::<GameElement>)
@@ -42,17 +48,50 @@ impl Plugin for GamePlugin {
     }
 }
 
-fn add_resources(
+fn add_stars(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
+    let mut rand = thread_rng();
+
+    let mut rand = || rand.gen_range(-1.0f32..1.0);
+
+    let material = materials.add(StandardMaterial {
+        base_color: Color::rgb(251.0 / 255.0, 1.0, 201.0 / 255.0),
+        emissive: Color::rgb(251.0 / 255.0, 1.0, 201.0 / 255.0),
+        ..default()
+    });
+
+    let mesh = meshes.add(Mesh::from(shape::Icosphere { radius: 4.0, subdivisions: 3 }));
+
+    for _ in 0..4000 {
+        let pos = Vec3::new(rand(), rand(), rand()).normalize() * 5000.0;
+        let scl = rand() + 2.0;
+        commands
+            .spawn_bundle(PbrBundle {
+                mesh: mesh.clone(),
+                material: material.clone(),
+                transform: Transform::from_translation(pos)
+                    .with_scale(Vec3::splat(scl)),
+                ..default()
+            });
+    }
+}
+
+fn add_resources(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    asset_server: Res<AssetServer>,
+) {
      commands.insert_resource(
          LoadResources {
-             planet_mesh: meshes.add(Mesh::from(shape::UVSphere { radius: 1.0, sectors: 20, stacks: 20 })),
-             player_mesh: meshes.add(Mesh::from(shape::Icosphere { subdivisions: 5, radius: 1.0 })),
-             planet_mat: materials.add(Color::rgb(0.7, 0.6, 0.5).into()),
-             player_mat: materials.add(Color::rgb(1.0, 0.0, 0.0).into()),
+             planet_mesh: meshes.add(Mesh::from(shape::UVSphere { radius: 1.0, sectors: 40, stacks: 40 })),
+             player_mesh: meshes.add(Mesh::from(shape::Icosphere { subdivisions: 8, radius: 1.0 })),
+             planet_texture: asset_server.load("moon.png"),
+             planet_nmap: asset_server.load("NormalMap.png"),
+             player_mat: materials.add(Color::rgb(186.0 / 255.0, 67.0 / 255.0, 67.0 / 255.0).into()),
              target_mat: materials.add(StandardMaterial {
                  base_color: Color::rgb(1.0, 1.0, 0.0),
                  emissive: Color::rgb(1.0, 1.0, 1.0),
@@ -83,7 +122,7 @@ fn add_resources(
                 .with(Position::new(Vec3::new(4.0, 0.0, 0.0)))
                 .with(Rotation::new(Quat::IDENTITY))
                 .with(Smooth::new_position(1.25))
-                .with(Arm::new(Vec3::new(1.0, 2.0, -3.5)))
+                .with(Arm::new(4.0 * Vec3::new(1.0, 2.0, -3.5)))
                 .with(Smooth::new_position(2.5))
                 .with(
                     LookAt::new(Vec3::new(4.0, 0.0, 0.0))
@@ -100,7 +139,7 @@ fn add_resources(
 
     commands.insert_resource(ProjectedResources {
         mesh: meshes.add(Mesh::from(shape::Icosphere { subdivisions: 5, radius: 1.0 })),
-        material: materials.add(Color::rgb(0.0, 0.0, 0.0).into()),
+        material: materials.add(Color::rgb(3.0 / 255.0, 252.0 / 255.0, 90.0 / 255.0).into()),
     });
 
     commands.insert_resource(DeltaTime {
@@ -130,6 +169,45 @@ fn skip_level(
     }
 }
 
+fn touch_target(
+    target: Query<&Transform, With<Target>>,
+    ball: Query<&Transform, With<MainBall>>,
+    mut level: ResMut<State<LevelNumber>>,
+    mut game: ResMut<State<GameState>>,
+) {
+    for ball in ball.iter() {
+        for target in target.iter() {
+            if (ball.translation - target.translation).length() < 0.3 {
+                let next = match level.current() {
+                    LevelNumber::One => LevelNumber::Two,
+                    LevelNumber::Two => LevelNumber::Three,
+                    LevelNumber::Three => {
+                        game.set(GameState::Splash).unwrap();
+                        LevelNumber::None
+                    },
+                    LevelNumber::None => panic!("Cannot cheat in this state."),
+                };
+                level.set(next).unwrap();
+            }
+        }
+    }
+}
+
+fn zoom(
+    mut wheel_events: EventReader<MouseWheel>,
+    mut rig: Query<&mut CameraTag>,
+) {
+    let mut accum = 0.0;
+    wheel_events.iter().for_each(|x| accum += x.y);
+
+    #[cfg(target_family = "wasm")]
+    {
+        accum /= 100.0;
+    }
+
+    rig.iter_mut().next().unwrap().rig.driver_mut::<Arm>().offset *= 10.0f32.powf(-accum * 0.04);
+}
+
 struct MenuPlugin;
 
 impl Plugin for MenuPlugin {
@@ -157,6 +235,7 @@ fn main() {
     App::new()
         .add_state(GameState::Splash)
         .add_state(LevelNumber::None)
+        .insert_resource(ClearColor(Color::rgb(0.04, 0.04, 0.08)))
         .insert_resource(Msaa { samples: 4 })
         .add_plugins(DefaultPlugins)
         .add_plugin(GameAudioPlugin)
@@ -207,6 +286,7 @@ pub fn add_ball<const LEVEL: usize>(
         commands.entity(entity).insert(Dynamics {
             acc: Vec3::ZERO,
             vel,
+            recent_collisions: -4.0,
         });
     }
 }
@@ -217,11 +297,11 @@ pub fn add_planet<const LEVEL: usize>(
     mass: f32,
     radius: f32,
     mesh: &Handle<Mesh>,
-    material: &Handle<StandardMaterial>,
+    material: Handle<StandardMaterial>,
 ) {
     commands.spawn_bundle(PbrBundle {
         mesh: mesh.clone(),
-        material: material.clone(),
+        material,
         transform: Transform::from_xyz(pos.x, pos.y, pos.z)
             .with_scale(Vec3::splat(radius)),
         ..default()
@@ -230,10 +310,10 @@ pub fn add_planet<const LEVEL: usize>(
             mass,
             radius,
         })
-        .insert(Dynamics {
-            acc: Vec3::ZERO,
-            vel: Vec3::ZERO,
-        })
+        // .insert(Dynamics {
+        //     acc: Vec3::ZERO,
+        //     vel: Vec3::ZERO,
+        // })
         .insert(GameElement)
         .insert(LevelId::<LEVEL>);
 }
@@ -265,20 +345,14 @@ fn update_timestep(
 }
 
 fn update_acc(
-    query_pos: Query<(Entity, &GlobalTransform, &Planet)>,
-    mut query_acc: Query<(Entity, &GlobalTransform, &GravityAffected, &mut Dynamics)>,
+    query_pos: Query<(&GlobalTransform, &Planet)>,
+    mut query_acc: Query<(&GlobalTransform, &mut Dynamics)>,
 ) {
-    for (outer, outer_pos, outer_gravity, mut acc) in query_acc.iter_mut() {
+    for (outer_pos, mut acc) in query_acc.iter_mut() {
         acc.acc = Vec3::ZERO;
-        for (inner, inner_pos, inner_gravity) in query_pos.iter() {
-
-            if outer == inner {
-                continue;
-            }
-
+        for (inner_pos, inner_gravity) in query_pos.iter() {
             let f = acc_of(inner_gravity.mass, outer_pos.translation, inner_pos.translation);
 
-            // acc.acc += delta.normalize() * f / outer_gravity.mass;
             acc.acc += f;
         }
     }
@@ -309,14 +383,18 @@ fn collide(
         &GlobalTransform,
     )>,
     mut commands: Commands,
+    mut camera_state: ResMut<CameraState>,
 ) { //checking for collisions between ball and planet
     for (ball_entity, ball, mut ball_dyn, ball_pos, mut ball_transform) in query.iter_mut() {
+        ball_dyn.recent_collisions *= 0.8;
         for (planet, planet_transform) in statics.iter() {
             let delta = ball_pos.translation - planet_transform.translation;
 
             let needed_dist = ball.radius + planet.radius;
 
-            if delta.length() - needed_dist < 0.0 {
+            if delta.length() - needed_dist < 0.0 && ball_dyn.recent_collisions > -2.0 {
+                println!("Collided: {}!", ball_dyn.recent_collisions);
+                ball_dyn.recent_collisions += 1.0;
                 let displacement = planet_transform.translation - ball_transform.translation;
                 let displacement = displacement.normalize() * needed_dist;
 
@@ -329,12 +407,16 @@ fn collide(
 
                 ball_dyn.vel = reflected * ball_dyn.vel.length() * 0.75;
 
-                if ball_dyn.vel.length() < 0.2 {
+                if ball_dyn.recent_collisions > 2.0 {
                     commands.entity(ball_entity)
                         .remove::<Dynamics>()
                         .insert(OnGround {
                             center_of_planet: planet_transform.translation
                         });
+
+                    *camera_state = CameraState::Around {
+                        pos: planet_transform.translation,
+                    };
                 }
             }
         }
@@ -354,10 +436,10 @@ fn camera_movement(
 
     if clicked.pressed(MouseButton::Left) {
         for event in position.iter() {
-            let delta = event.delta / (60.0 * (target.pos - transform.translation).length());
+            let delta = event.delta / (40.0 * (target.pos - transform.translation).length());
 
-
-            camera.rig.driver_mut::<Rotation>().rotation *= Quat::from_rotation_x(-delta.y) * Quat::from_rotation_y(-delta.x);
+            let rotation = camera.rig.driver_mut::<Rotation>().rotation;
+            camera.rig.driver_mut::<Rotation>().rotation = Quat::from_rotation_x(-delta.y) * Quat::from_rotation_y(-delta.x) * rotation;
         }
     }
 
@@ -368,10 +450,10 @@ fn camera_movement(
             camera.rig.driver_mut::<Position>().position = ball.translation;
             camera.rig.driver_mut::<LookAt>().target = ball.translation;
         },
-        CameraState::Around { pos, id: _id } => {
+        CameraState::Around { pos } => {
             camera.rig.driver_mut::<Position>().position = pos;
             camera.rig.driver_mut::<LookAt>().target = pos;
-        }
+        },
     }
 
     let new_transform = camera.rig.update(time.delta_seconds());
@@ -390,6 +472,7 @@ fn aim(
     gravity_sources: Query<(&Planet, &Transform)>,
     mut ball: Query<(Entity, &Transform, &OnGround), (With<MainBall>, Without<Dynamics>)>,
     time: Res<DeltaTime>,
+    mut camera_state: ResMut<CameraState>,
 ) {
     let (ball_entity, ball_pos, ground) = if let Some(x) = ball.iter_mut().next() {
         x
@@ -425,8 +508,11 @@ fn aim(
                 .insert(Dynamics {
                     vel,
                     acc: Vec3::ZERO,
+                    recent_collisions: -4.0,
                 })
                 .remove::<OnGround>();
+
+            *camera_state = CameraState::Follow;
 
             input.start = None;
         }
@@ -446,8 +532,8 @@ fn aim(
             gravity_sources,
             ball_pos.translation,
             vel,
-            16,
-            20,
+            30,
+            12,
             time.time
         );
 
@@ -470,22 +556,25 @@ fn vel_from_delta(
     ball: Vec3,
     center: Vec3,
 ) -> Vec3 {
-    let direction_to_ball = (ball - center).normalize();
-    let dir_up = direction_to_ball.cross(transform.right()).normalize();
-    let dir_around = direction_to_ball.cross(dir_up).normalize();
+    // let direction_to_ball = (ball - center).normalize();
+    // let dir_up = direction_to_ball.cross(transform.right()).normalize();
+    // let dir_around = direction_to_ball.cross(dir_up).normalize();
 
     let delta = -delta;
-    let dir_x = dir_around;
-    let dir_y = dir_up;
-    let dir_z = -direction_to_ball;
+    // let dir_x = dir_around;
+    // let dir_y = dir_up;
+    // let dir_z = direction_to_ball;
+    //
+    // let mut direction = delta.x * dir_x + delta.y * dir_y;
+    //
+    // direction /= 50.0;
+    //
+    // direction += direction.length() * dir_z * 1.5;
 
-    let mut direction = delta.x * dir_x + delta.y * dir_y;
+    let dir_x = transform.right();
+    let dir_y = transform.up();
 
-    direction /= 50.0;
-
-    direction += direction.length() * dir_z;
-
-    direction
+    (delta.x * dir_x + delta.y * dir_y) / 50.0
 }
 
 fn simulate_ball(
