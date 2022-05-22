@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use bevy::ui::FocusPolicy;
-use crate::GameState;
+use crate::{GameState, LevelNumber};
 
 pub struct MainMenuPlugin;
 
@@ -51,7 +51,7 @@ fn handle_start_button(
 
 fn setup_menu(mut commands: Commands, assets: Res<AssetServer>) {
     let ui_assets = UiAssets {
-        font: assets.load("QuattrocentoSans-Bold.ttf"),
+        font: assets.load("Ubuntu-Bold.ttf"),
         button: assets.load("start_1.png"),
         button_pressed: assets.load("start_clicked_1.png")
     };

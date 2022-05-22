@@ -19,8 +19,10 @@ struct GamePlugin;
 impl Plugin for GamePlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_system_set(SystemSet::on_enter(GameState::Game).with_system(setup))
+            .add_startup_system(add_resources)
+            // .add_system_set(SystemSet::on_enter(GameState::Game).with_system(setup))
             .add_system_set(SystemSet::on_update(GameState::Game)
+                .with_system(skip_level)
                 .with_system(update_timestep)
                 .with_system(update_acc)
                 .with_system(update_pos_vel)
@@ -30,125 +32,36 @@ impl Plugin for GamePlugin {
             )
             .add_system_set(SystemSet::on_exit(GameState::Game)
                 .with_system(despawn::<GameElement>)
-            );
+            )
+            .add_system_set(SystemSet::on_enter(LevelNumber::One).with_system(load::<0>))
+            .add_system_set(SystemSet::on_enter(LevelNumber::Two).with_system(load::<1>))
+            .add_system_set(SystemSet::on_enter(LevelNumber::Three).with_system(load::<2>))
+            .add_system_set(SystemSet::on_exit(LevelNumber::One).with_system(despawn::<LevelId<0>>))
+            .add_system_set(SystemSet::on_exit(LevelNumber::Two).with_system(despawn::<LevelId<1>>))
+            .add_system_set(SystemSet::on_exit(LevelNumber::Three).with_system(despawn::<LevelId<2>>));
     }
 }
 
-struct MenuPlugin;
-
-impl Plugin for GamePlugin {
-    fn build(&self, app: &mut App) {
-        // todo, jerry
-    }
-}
-
-fn despawn<T: Component>(to_despawn: Query<Entity, With<T>>, mut commands: Commands) {
-    for entity in to_despawn.iter() {
-        commands.entity(entity).despawn_recursive();
-    }
-}
-
-fn main() {
-    App::new()
-        .insert_resource(Msaa { samples: 4 })
-        .add_plugins(DefaultPlugins)
-        .add_plugin(GameAudioPlugin)
-        .add_plugin(MainMenuPlugin)
-        .add_plugin(GamePlugin)
-        .add_startup_system(setup)
-        //game runningfl
-        .run();
-}
-
-pub fn add_ball(
-    commands: &mut Commands,
-    pos: Vec3,
-    mass: f32,
-    radius: f32,
-    mesh: &Handle<Mesh>,
-    material: &Handle<StandardMaterial>,
-    vel: Vec3,
-) {
-    commands.spawn_bundle(PbrBundle {
-        mesh: mesh.clone(),
-        material: material.clone(),
-        transform: Transform::from_xyz(pos.x, pos.y, pos.z)
-            .with_scale(Vec3::splat(radius)),
-        ..default()
-    })
-        .insert(GravityAffected {
-            mass,
-            radius,
-        })
-        .insert(Dynamics {
-            acc: Vec3::ZERO,
-            vel,
-        })
-        .insert(MainBall);
-}
-
-pub fn add_planet(
-    commands: &mut Commands,
-    pos: Vec3,
-    mass: f32,
-    radius: f32,
-    mesh: &Handle<Mesh>,
-    material: &Handle<StandardMaterial>,
-) {
-    commands.spawn_bundle(PbrBundle {
-        mesh: mesh.clone(),
-        material: material.clone(),
-        transform: Transform::from_xyz(pos.x, pos.y, pos.z)
-            .with_scale(Vec3::splat(radius)),
-        ..default()
-    })
-        .insert(Planet {
-            mass,
-            radius,
-        })
-        .insert(Dynamics {
-            acc: Vec3::ZERO,
-            vel: Vec3::ZERO,
-        })
-        .insert(GameElement);
-}
-
-/// set up a simple 3D scene
-fn setup(
+fn add_resources(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    let mesh = meshes.add(Mesh::from(shape::UVSphere { radius: 1.0, sectors: 20, stacks: 20 }));
-    let material = materials.add(Color::rgb(0.8, 0.7, 0.6).into());
+     commands.insert_resource(
+         LoadResources {
+             planet_mesh: meshes.add(Mesh::from(shape::UVSphere { radius: 1.0, sectors: 20, stacks: 20 })),
+             player_mesh: meshes.add(Mesh::from(shape::Icosphere { subdivisions: 5, radius: 1.0 })),
+             planet_mat: materials.add(Color::rgb(0.7, 0.6, 0.5).into()),
+             player_mat: materials.add(Color::rgb(1.0, 0.0, 0.0).into()),
+             target_mat: materials.add(StandardMaterial {
+                 base_color: Color::rgb(1.0, 1.0, 0.0),
+                 emissive: Color::rgb(1.0, 1.0, 1.0),
+                 ..default()
+             })
+         }
+     );
 
-    add_planet(
-        &mut commands,
-        Vec3::ZERO,
-        200.0,
-        2.0,
-        &mesh,
-        &material,
-    );
-
-    commands
-        .insert_resource(TargetedPlanet {
-            pos: Vec3::ZERO,
-            radius: 2.0,
-        });
-
-    add_ball(
-        &mut commands,
-        Vec3::new(4.0, 0.0, 0.0),
-        3.0,
-        0.1,
-        &mesh,
-        &material,
-        Vec3::new(1.0, 1.0, 1.0) * 0.5,
-    );
-
-    commands
-        .add_resource(CameraState::Follow);
+    commands.insert_resource(CameraState::Follow);
 
     // light
     commands.spawn_bundle(PointLightBundle {
@@ -175,7 +88,7 @@ fn setup(
                 .with(
                     LookAt::new(Vec3::new(4.0, 0.0, 0.0))
                         .tracking_smoothness(1.25)
-                        // .tracking_predictive(true)
+                    // .tracking_predictive(true)
                 )
                 .build()
         });
@@ -186,7 +99,7 @@ fn setup(
     });
 
     commands.insert_resource(ProjectedResources {
-        mesh,
+        mesh: meshes.add(Mesh::from(shape::Icosphere { subdivisions: 5, radius: 1.0 })),
         material: materials.add(Color::rgb(0.0, 0.0, 0.0).into()),
     });
 
@@ -194,17 +107,150 @@ fn setup(
         time: 1.0 / 60.0,
     });
 
-    let mut ortho_cam = OrthographicCameraBundle::new_2d();
+    commands
+        .insert_resource(TargetedPlanet {
+            pos: Vec3::ZERO,
+            radius: 2.0,
+        });
+}
 
-    ortho_cam.orthographic_projection.top = 1.0;
-    ortho_cam.orthographic_projection.bottom = -1.0;
+fn skip_level(
+    keys: Res<Input<KeyCode>>,
+    mut level: ResMut<State<LevelNumber>>,
+) {
+    if keys.just_pressed(KeyCode::R) {
+        let next = match level.current() {
+            LevelNumber::One => LevelNumber::Two,
+            LevelNumber::Two => LevelNumber::Three,
+            LevelNumber::Three => LevelNumber::One,
+            LevelNumber::None => panic!("Cannot cheat in this state."),
+        };
+        println!("Going to {:?}", next);
+        level.set(next).unwrap();
+    }
+}
 
-    ortho_cam.orthographic_projection.right = 1.0 * RESOLUTION;
-    ortho_cam.orthographic_projection.left = -1.0 * RESOLUTION;
+struct MenuPlugin;
 
-    ortho_cam.orthographic_projection.scaling_mode = ScalingMode::None;
+impl Plugin for MenuPlugin {
+    fn build(&self, app: &mut App) {
+        // todo, jerry
+    }
+}
 
-    commands.spawn_bundle(ortho_cam).insert(UIMainCamera);
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+enum LevelNumber {
+    None,
+    One,
+    Two,
+    Three,
+}
+
+fn despawn<T: Component>(to_despawn: Query<Entity, With<T>>, mut commands: Commands) {
+    for entity in to_despawn.iter() {
+        commands.entity(entity).despawn_recursive();
+    }
+}
+
+fn main() {
+    App::new()
+        .insert_resource(Msaa { samples: 4 })
+        .add_plugins(DefaultPlugins)
+        .add_plugin(GameAudioPlugin)
+        .add_plugin(MainMenuPlugin)
+        .add_plugin(GamePlugin)
+        // .add_startup_system(setup)
+        //game runningfl
+        .run();
+}
+
+#[derive(Component)]
+struct Target;
+
+#[derive(Component)]
+struct OnGround {
+    center_of_planet: Vec3,
+}
+
+pub fn add_ball<const LEVEL: usize>(
+    commands: &mut Commands,
+    pos: Vec3,
+    mass: f32,
+    radius: f32,
+    mesh: &Handle<Mesh>,
+    material: &Handle<StandardMaterial>,
+    vel: Option<Vec3>,
+    center_of_planet: Vec3,
+) {
+    let entity = commands.spawn_bundle(PbrBundle {
+        mesh: mesh.clone(),
+        material: material.clone(),
+        transform: Transform::from_xyz(pos.x, pos.y, pos.z)
+            .with_scale(Vec3::splat(radius)),
+        ..default()
+    })
+        .insert(GravityAffected {
+            mass,
+            radius,
+        })
+        .insert(MainBall)
+        .insert(GameElement)
+        .insert(LevelId::<LEVEL>)
+        .insert(OnGround {
+            center_of_planet
+        })
+        .id();
+    if let Some(vel) = vel {
+        commands.entity(entity).insert(Dynamics {
+            acc: Vec3::ZERO,
+            vel,
+        });
+    }
+}
+
+pub fn add_planet<const LEVEL: usize>(
+    commands: &mut Commands,
+    pos: Vec3,
+    mass: f32,
+    radius: f32,
+    mesh: &Handle<Mesh>,
+    material: &Handle<StandardMaterial>,
+) {
+    commands.spawn_bundle(PbrBundle {
+        mesh: mesh.clone(),
+        material: material.clone(),
+        transform: Transform::from_xyz(pos.x, pos.y, pos.z)
+            .with_scale(Vec3::splat(radius)),
+        ..default()
+    })
+        .insert(Planet {
+            mass,
+            radius,
+        })
+        .insert(Dynamics {
+            acc: Vec3::ZERO,
+            vel: Vec3::ZERO,
+        })
+        .insert(GameElement)
+        .insert(LevelId::<LEVEL>);
+}
+
+pub fn add_target<const LEVEL: usize>(
+    commands: &mut Commands,
+    pos: Vec3,
+    mesh: &Handle<Mesh>,
+    material: &Handle<StandardMaterial>,
+) {
+    commands.spawn_bundle(PbrBundle {
+        mesh: mesh.clone(),
+        material: material.clone(),
+        transform: Transform::from_xyz(pos.x, pos.y, pos.z)
+            .with_scale(Vec3::splat(0.1)),
+        ..default()
+    })
+        .insert(Target)
+        .insert(GameElement)
+        .insert(LevelId::<LEVEL>);
 }
 
 fn update_timestep(
@@ -280,9 +326,12 @@ fn collide(
 
                 ball_dyn.vel = reflected * ball_dyn.vel.length() * 0.75;
 
-                if ball_dyn.vel.length() < 0.05 {
+                if ball_dyn.vel.length() < 0.2 {
                     commands.entity(ball_entity)
-                        .remove::<Dynamics>();
+                        .remove::<Dynamics>()
+                        .insert(OnGround {
+                            center_of_planet: planet_transform.translation
+                        });
                 }
             }
         }
@@ -336,10 +385,10 @@ fn aim(
     projected_resources: Res<ProjectedResources>,
     camera: Query<&Transform, With<CameraTag>>,
     gravity_sources: Query<(&Planet, &Transform)>,
-    mut ball: Query<(Entity, &Transform), (With<MainBall>, Without<Dynamics>)>,
+    mut ball: Query<(Entity, &Transform, &OnGround), (With<MainBall>, Without<Dynamics>)>,
     time: Res<DeltaTime>,
 ) {
-    let (ball_entity, ball_pos) = if let Some(x) = ball.iter_mut().next() {
+    let (ball_entity, ball_pos, ground) = if let Some(x) = ball.iter_mut().next() {
         x
     } else {
         return;
@@ -363,13 +412,18 @@ fn aim(
 
     if clicked.just_released(MouseButton::Right) {
         if let Some(start) = input.start {
-            let vel = vel_from_delta(input.cursor_pos - start, camera);
-            println!("{:?}", vel);
+            let vel = vel_from_delta(
+                input.cursor_pos - start,
+                camera,
+                ball_pos.translation,
+                ground.center_of_planet,
+            );
             commands.entity(ball_entity)
                 .insert(Dynamics {
                     vel,
                     acc: Vec3::ZERO,
-                });
+                })
+                .remove::<OnGround>();
 
             input.start = None;
         }
@@ -378,7 +432,12 @@ fn aim(
     if let Some(pos) = input.start {
         let delta = input.cursor_pos - pos;
 
-        let vel = vel_from_delta(delta, camera);
+        let vel = vel_from_delta(
+            delta,
+            camera,
+            ball_pos.translation,
+            ground.center_of_planet,
+        );
 
         let positions = simulate_ball(
             gravity_sources,
@@ -405,10 +464,17 @@ fn aim(
 fn vel_from_delta(
     delta: Vec2,
     transform: &Transform,
+    ball: Vec3,
+    center: Vec3,
 ) -> Vec3 {
-    let dir_x = transform.right();
-    let dir_y = transform.up();
-    let dir_z = -transform.forward();
+    let direction_to_ball = (ball - center).normalize();
+    let dir_up = direction_to_ball.cross(transform.right()).normalize();
+    let dir_around = direction_to_ball.cross(dir_up).normalize();
+
+    let delta = -delta;
+    let dir_x = dir_around;
+    let dir_y = dir_up;
+    let dir_z = -direction_to_ball;
 
     let mut direction = delta.x * dir_x + delta.y * dir_y;
 

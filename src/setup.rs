@@ -57,13 +57,13 @@ pub struct DeltaTime {
     pub time: f32,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum GameState {
     Splash,
     Game,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum CameraState {
     Follow,
     Around {
